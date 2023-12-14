@@ -24,6 +24,41 @@ contract Quiz {
         entryFee = _entryFee;
         quizActive = true;
     }
+    //answer questions and reveal them
+event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
+event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
+
+
+function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
+    require(quizActive, "Quiz is not active");
+    require(msg.value == entryFee, "Incorrect entry fee");
+
+    players[msg.sender].committedAnswers[question] = answerHash;
+
+    emit QuestionAnswered(msg.sender, question, answerHash);
+}
+
+function revealAnswer(bytes32 question, bytes32 answer, bytes32 salt) external {
+    require(!quizActive, "Quiz is still active");
+
+    bytes32 commitment = keccak256(abi.encodePacked(answer, salt));
+    require(players[msg.sender].committedAnswers[question] == commitment, "Invalid commitment");
+    bytes32 correctAnswerHash = keccak256(abi.encodePacked("CorrectAnswer", salt));//radi primera
+
+    if (commitment == correctAnswerHash) {
+        players[msg.sender].score += 1;
+    }
+
+    emit AnswerRevealed(msg.sender, question, answer, salt);
+
+
+    if (players[msg.sender].score >= requiredScore) {
+        winners.push(msg.sender);
+        emit WinnerSet(msg.sender);
+    }
+}
+
+event WinnerSet(address winner);
 
     /// Reward Pool
 
