@@ -1,14 +1,33 @@
 pragma solidity 0.8.23;
-
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol"
 contract Quiz {
 
+    /// Data structures
 
+    struct Player {
+        mapping (bytes32 => uint) commitedAnswers;
+        uint256 score = 0;
+    }
 
- 
+    bytes32[] public questions;
+
+    mapping(address => Player) public players;
+    mapping(address => bool) public winners;
+    
+    
+    bool quizActive;
+
+    uint256 entryFee;
+
+    constructor(bytes32[] memory _questions, uint256 _entryFee) Ownable(msg.sender) {
+        questions = _questions;
+        entryFee = _entryFee;
+        quizActive = true;
+    }
+
     /// Reward Pool
 
     event RewardPayed(address receiver, uint256 prize);
-
 
     function isWinner(address _userAddress) public view returns (bool, uint16) {
         uint256 winnersLen = winners.length;
