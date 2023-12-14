@@ -10,6 +10,10 @@ contract QuizTest is Test {
         quizContract = new Quiz();
     }
 
-    function testRewardPayment()
+    function testFail_RewardPayment() public {
+        quizContract.withdrawReward();
+    }
+
+    
 
 }
