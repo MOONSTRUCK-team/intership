@@ -32,7 +32,7 @@ event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 s
 function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
     require(quizActive, "Quiz is not active");
     require(msg.value == entryFee, "Incorrect entry fee");
-
+    require(owner() != msg.sender, "Owner cannot participate");
     players[msg.sender].committedAnswers[question] = answerHash;
 
     emit QuestionAnswered(msg.sender, question, answerHash);
@@ -44,14 +44,13 @@ function revealAnswer(bytes32 question, bytes32 answer, bytes32 salt) external {
     bytes32 commitment = keccak256(abi.encodePacked(answer, salt));
     require(players[msg.sender].committedAnswers[question] == commitment, "Invalid commitment");
     bytes32 correctAnswerHash = keccak256(abi.encodePacked("CorrectAnswer", salt));//radi primera
-
     if (commitment == correctAnswerHash) {
         players[msg.sender].score += 1;
     }
 
     emit AnswerRevealed(msg.sender, question, answer, salt);
 
-
+require(!isWinner(players[msg.sender]));
     if (players[msg.sender].score >= requiredScore) {
         winners.push(msg.sender);
         emit WinnerSet(msg.sender);
