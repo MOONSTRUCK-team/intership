@@ -1,8 +1,11 @@
 pragma solidity 0.8.23;
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol"
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+
 contract Quiz {
 
-    /// Data structures
+    ///Data structures
 
     struct Player {
         mapping (bytes32 => uint) commitedAnswers;
@@ -19,45 +22,46 @@ contract Quiz {
 
     uint256 entryFee;
 
-    constructor(bytes32[] memory _questions, uint256 _entryFee) Ownable(msg.sender) {
+    constructor(bytes32[] memory _questions, uint256 _entryFee, uint16 _prizePool) Ownable(msg.sender) {
         questions = _questions;
         entryFee = _entryFee;
         quizActive = true;
+        prizePool = _prizePool;
     }
     //answer questions and reveal them
-event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
-event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
+    event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
+    event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
 
 
-function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
-    require(quizActive, "Quiz is not active");
-    require(msg.value == entryFee, "Incorrect entry fee");
-    require(owner() != msg.sender, "Owner cannot participate");
-    players[msg.sender].committedAnswers[question] = answerHash;
+    function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
+        require(quizActive, "Quiz is not active");
+        require(msg.value == entryFee, "Incorrect entry fee");
+        require(owner() != msg.sender, "Owner cannot participate");
+        players[msg.sender].committedAnswers[question] = answerHash;
 
-    emit QuestionAnswered(msg.sender, question, answerHash);
-}
-
-function revealAnswer(bytes32 question, bytes32 answer, bytes32 salt) external {
-    require(!quizActive, "Quiz is still active");
-
-    bytes32 commitment = keccak256(abi.encodePacked(answer, salt));
-    require(players[msg.sender].committedAnswers[question] == commitment, "Invalid commitment");
-    bytes32 correctAnswerHash = keccak256(abi.encodePacked("CorrectAnswer", salt));//radi primera
-    if (commitment == correctAnswerHash) {
-        players[msg.sender].score += 1;
+        emit QuestionAnswered(msg.sender, question, answerHash);
     }
 
-    emit AnswerRevealed(msg.sender, question, answer, salt);
+    function revealAnswer(bytes32 question, bytes32 answer, bytes32 salt) external {
+        require(!quizActive, "Quiz is still active");
 
-require(!isWinner(players[msg.sender]));
-    if (players[msg.sender].score >= requiredScore) {
-        winners.push(msg.sender);
-        emit WinnerSet(msg.sender);
+        bytes32 commitment = keccak256(abi.encodePacked(answer, salt));
+        require(players[msg.sender].committedAnswers[question] == commitment, "Invalid commitment");
+        bytes32 correctAnswerHash = keccak256(abi.encodePacked("CorrectAnswer", salt));//radi primera
+        if (commitment == correctAnswerHash) {
+            players[msg.sender].score += 1;
+        }
+
+        emit AnswerRevealed(msg.sender, question, answer, salt);
+
+    require(!isWinner(players[msg.sender]));
+        if (players[msg.sender].score >= requiredScore) {
+            winners.push(msg.sender);
+            emit WinnerSet(msg.sender);
+        }
     }
-}
 
-event WinnerSet(address winner);
+    event WinnerSet(address winner);
 
     /// Reward Pool
 
@@ -85,11 +89,12 @@ event WinnerSet(address winner);
         require(winnerStatus, "You do not qualify for a reward");
 
         delete winners[index];
-
         uint256 reward = distributeRewards();
 
         payable(msg.sender).transfer(reward);
-
         emit RewardPayed(msg.sender, reward);
     }
+
+
+    function withdrawLeftoverEther() external {}
 }
