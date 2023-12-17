@@ -9,7 +9,7 @@ contract Quiz {
 
     struct Player {
         mapping (bytes32 => uint) commitedAnswers;
-        uint256 score = 0;
+        uint256 score;
     }
 
     bytes32[] public questions;
@@ -19,8 +19,9 @@ contract Quiz {
     
     
     bool quizActive;
-
+    uint32 public prizePool;
     uint256 entryFee;
+    uint16 requiredScore;
 
     constructor(bytes32[] memory _questions, uint256 _entryFee, uint16 _prizePool) Ownable(msg.sender) {
         questions = _questions;
@@ -35,7 +36,7 @@ contract Quiz {
 
     function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
         require(quizActive, "Quiz is not active");
-        require(msg.value == entryFee, "Incorrect entry fee");
+        require(msg.value >= entryFee, "Incorrect entry fee");
         require(owner() != msg.sender, "Owner cannot participate");
         players[msg.sender].committedAnswers[question] = answerHash;
 
@@ -56,7 +57,7 @@ contract Quiz {
 
     require(!isWinner(players[msg.sender]));
         if (players[msg.sender].score >= requiredScore) {
-            winners.push(msg.sender);
+            winners[msg.sender] = true;
             emit WinnerSet(msg.sender);
         }
     }
