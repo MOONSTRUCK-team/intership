@@ -7,24 +7,28 @@ contract Quiz {
 
     ///Data structures
 
-    struct Player {
-        mapping (bytes32 => uint) commitedAnswers;
-        uint256 score;
-    }
+    bytes32[] answerCommits;
 
-    bytes32[] public questions;
+    string[] public questions;
+    bytes32[] public answerCommits;
+    uint8[] public answers;
 
     mapping(address => Player) public players;
     mapping(address => bool) public winners;
     
     
     bool quizActive;
-    uint32 public prizePool;
     uint256 entryFee;
     uint16 requiredScore;
 
-    constructor(bytes32[] memory _questions, uint256 _entryFee, uint16 _prizePool) Ownable(msg.sender) {
+    /// @param _questions CID pitanja na IPFS
+    constructor(string[] memory _questions, bytes32[] memory _answerCommits, uint256 _entryFee, uint16 _requiredScore) payable Ownable(msg.sender) {
+        require(_requiredScore <= _questions.length);
+        require(_answerCommits.length == _questions.length);
+        /// Dodati i ostale provere
         questions = _questions;
+        answerCommits = _answerCommits;
+        requiredScore = _requiredScore;
         entryFee = _entryFee;
         quizActive = true;
         prizePool = _prizePool;
