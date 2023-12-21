@@ -5,8 +5,8 @@ contract Quiz {
     uint256 public constant MAX_ANSWER_VALUE = 4;
     /// @dev CIDs to the questions on IPFS
     string[] public questions;
-    /// @dev Hashes of the answers to the questions (commits)
-    bytes32[] public quizAnswerCommits;
+   /// @dev Hashes of the answers to the questions (commits)
+    bytes32[] public quizAnswerCommits; 
     /// @dev Correct answers to the questions
     uint8[] public correctAnwers;
     /// @dev Mapping from user to commits of his answers
@@ -49,31 +49,47 @@ contract Quiz {
         questions = _questions;
         quizAnswerCommits = _answerCommits;
     }
-    // TODO Merisa: Dodaj da moze ceo niz odgovora da se posalje odjednom, da ne mora vise puta da se pozove
-    function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
-        require(quizActive, "Quiz is not active");
-        require(msg.value >= entryFee, "Incorrect entry fee");
-        require(owner() != msg.sender, "Owner cannot participate");
-        players[msg.sender].committedAnswers[question] = answerHash;
-        emit QuestionAnswered(msg.sender, question, answerHash);
+
+
+function answerQuestions(uint8[] calldata selectedAnswers, bytes32[] calldata userSalts) external payable {
+    require(block.timestamp < endTs, "Quiz is not active");
+    require(msg.value >= entryFee, "Incorrect entry fee");
+    require(owner() != msg.sender, "Owner cannot participate");
+    require(selectedAnswers.length == questions.length, "Invalid number of answers");
+    require(selectedAnswers.length == userSalts.length, "Invalid number of salts");
+
+    uint256 questionsLength = questions.length;
+    for (uint256 i = 0; i < questionsLength; i++) {
+        require(selectedAnswers[i] < MAX_ANSWER_VALUE, "Invalid answer index");
+        bytes32 userAnswerCommit = keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender));
+        userAnswerCommits[msg.sender].push(userAnswerCommit);
+
+        emit QuestionAnswered(msg.sender, questions[i], userAnswerCommit);
     }
-    // TODO Merisa: Dodaj da moze ceo niz odgovora da se posalje odjednom, da ne mora vise puta da se pozove
-    function revealAnswer(bytes32 question, bytes32 answer, bytes32 salt) external {
-        require(!quizActive, "Quiz is still active");
-        bytes32 commitment = keccak256(abi.encodePacked(answer, salt));
-        require(players[msg.sender].committedAnswers[question] == commitment, "Invalid commitment");
-        bytes32 correctAnswerHash = keccak256(abi.encodePacked("CorrectAnswer", salt)); //radi primera
+}
+
+function revealAnswer(uint8[] calldata selectedAnswers, bytes32[] calldata userSalts) external {
+    require(block.timestamp >= revealPeriodTs, "Reveal period has not started");
+    require(selectedAnswers.length == questions.length, "Invalid number of answers");
+    require(selectedAnswers.length == userSalts.length, "Invalid number of salts");
+
+    uint256 questionsLength = questions.length;
+    for (uint256 i = 0; i < questionsLength; i++) {
+        bytes32 commitment = keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender));
+        require(userAnswerCommits[msg.sender][i] == commitment, "Invalid commitment");
+        bytes32 correctAnswerHash = keccak256(abi.encodePacked(correctAnwers[i],userSalts[i], msg.sender));
+
+        emit AnswerRevealed(msg.sender, questions[i], correctAnwers[i], userSalts[i]);
+
         if (commitment == correctAnswerHash) {
-            players[msg.sender].score += 1;
-        }
-        emit AnswerRevealed(msg.sender, question, answer, salt);
-        require(!isWinner(players[msg.sender]));
-        if (players[msg.sender].score >= requiredScore) {
             winners[msg.sender] = true;
+            countOfWinners++;
             emit WinnerSet(msg.sender);
         }
     }
-    event WinnerSet(address winner);
+}
+
+
     /// Reward Pool
     event RewardPayed(address receiver, uint256 prize);
     function isWinner(address _userAddress) public view returns (bool, uint16) {
