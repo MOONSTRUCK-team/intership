@@ -45,8 +45,8 @@ contract Quiz is Ownable {
     ) payable Ownable(msg.sender) {
         require(_requiredScore <= _questions.length);
         require(_answerCommits.length == _questions.length);
-        require(_endTs > block.timestamp + 2 days && _endTs < block.timestamp + 7 days);
-        require(_revealPeriodTs > _endTs + 2 days && _revealPeriodTs < _endTs + 7 days);
+        require(_endTs >= block.timestamp + 2 days && _endTs <= block.timestamp + 7 days);
+        require(_revealPeriodTs >= _endTs + 2 days && _revealPeriodTs <= _endTs + 7 days);
         // TODO Dodati i ostale provere
         entryFee = _entryFee;
         requiredScore = _requiredScore;

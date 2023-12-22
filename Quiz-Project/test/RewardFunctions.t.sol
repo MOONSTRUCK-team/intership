@@ -10,7 +10,7 @@ contract QuizTest is Test {
 
     function setUp() public {
         uint256 aTs = block.timestamp + 7 days;
-        uint256 rTs = block.timestamp + 2 days;
+        uint256 rTs = aTs + 2 days;
         string[] memory questions;
         questions = new string[](2);
         questions[0] = "1";
