@@ -2,7 +2,7 @@ pragma solidity 0.8.23;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Quiz is Ownable {
+contract Quiz is Ownable{
     /// @dev Maximum value that quiz answer can have
     uint256 public constant MAX_ANSWER_VALUE = 4;
     /// @dev CIDs to the questions on IPFS
@@ -24,6 +24,11 @@ contract Quiz is Ownable {
     /// @dev Value of entry fee needed for user to participate in the quiz
     uint256 public entryFee;
 
+    uint256 winnersCount;
+    uint256 quizEndTs;
+
+    event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
+    event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
     /// @param _entryFee Entry fee for the quiz participants
     /// @param _requiredScore Required score to win
     /// @param _endTs End timestamp
@@ -50,21 +55,12 @@ contract Quiz is Ownable {
         revealPeriodTs = _revealPeriodTs;
         questions = _questions;
         quizAnswerCommits = _answerCommits;
+        quizEndTs = revealPeriodTs + 7 days;
     }
+    // TODO Merisa: Dodaj da moze ceo niz odgovora da se posalje odjednom, da ne mora vise puta da se pozove
 
-    event UserProvidedCommits(address user, bytes32[] commits);
-
-    /**
-     * 1. User creates a commit for each answer off-chain
-     *    - keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender))
-     *    - If its created on-chain, anyone can see the answers
-     */
-    /// @dev User provides the commits for their answers to the qiuz questions
-    ///      This method is `payable`
-    ///      Emits {UserProvidedCommits} event
-    /// @param answerCommits Hashes of the answers to the questions (commits)
-    function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
-        require(block.timestamp < endTs, "Quiz is not active");
+    function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
+        require(quizActive, "Quiz is not active");
         require(msg.value >= entryFee, "Incorrect entry fee");
         require(owner() != msg.sender, "Owner cannot participate");
         require(answerCommits.length == questions.length, "Invalid number of answers");
@@ -131,31 +127,34 @@ contract Quiz is Ownable {
     }
 
     /// Reward Pool
-    event RewardPayed(address receiver, uint256 prize);
 
-    function isWinner(address _userAddress) public view returns (bool, uint16) {
-        uint256 winnersLen = winners.length;
-        for (uint16 i = 0; i < winnersLen; i++) {
-            if (winners[i] == _userAddress) {
-                return (true, i);
-            }
-        }
-        return (false, 0);
-    }
+    event RewardPayed(address receiver, uint256 prize);
+    event LeftoverEthWithdrawed(address receiver, uint256 etherReturned);
 
     function distributeRewards() internal view returns (uint256) {
-        require(winners.length > 0, "This quiz has no winners");
-        return (prizePool / winners.length);
+        return (address(this).balance / winnersCount);
     }
 
     function withdrawReward() external {
-        (bool winnerStatus, uint16 index) = isWinner(msg.sender);
-        require(winnerStatus, "You do not qualify for a reward");
-        delete winners[index];
+        require(winners[msg.sender], "You do not qualify for a reward");
+        
+        winners[msg.sender] = false;
+
         uint256 reward = distributeRewards();
+        --winnersCount;
+
         payable(msg.sender).transfer(reward);
+
         emit RewardPayed(msg.sender, reward);
     }
 
-    function withdrawLeftoverEther() external {}
+    function withdrawLeftoverEther() external onlyOwner {
+        require(block.timestamp < quizEndTs, "Winners still have time to withdraw rewards");
+
+        uint256 leftoverBal = address(this).balance;
+
+        payable(msg.sender).transfer(leftoverBal);
+
+        emit LeftoverEthWithdrawed(msg.sender, leftoverBal);
+    }
 }

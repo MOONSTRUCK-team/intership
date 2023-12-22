@@ -9,7 +9,18 @@ contract QuizTest is Test {
     event Log(string func, uint256 gas);
 
     function setUp() public {
-        quizContract = new Quiz();
+        uint256 aTs = block.timestamp + 7 days;
+        uint256 rTs = block.timestamp + 2 days;
+        string[] memory questions;
+        questions = new string[](2);
+        questions[0] = "1";
+        questions[1] = "2";
+
+        bytes32[] memory answerCommits = new bytes32[](2);
+        answerCommits[0] = keccak256(abi.encodePacked("1"));
+        answerCommits[1] = keccak256(abi.encodePacked("1"));
+
+        quizContract = new Quiz(0, 0, aTs, rTs, questions, answerCommits);
     }
 
     function test_RevertWhen_NotWinner() public {
@@ -17,7 +28,7 @@ contract QuizTest is Test {
         quizContract.withdrawReward();
     }
 
-    function testContractEthBalance() public {
+    function testContractEthBalance() public view {
         console.log("ETH Balance", address(quizContract).balance / 1e18);
     }
 
@@ -25,6 +36,13 @@ contract QuizTest is Test {
         vm.deal(address(quizContract), 10 ether);
         hoax(address(this));
         quizContract.withdrawReward();
+    }
+
+    function test_LeftoverEthWithdraw() public {
+        vm.expectRevert("Winners still have time to withdraw rewards");
+        vm.deal(address(quizContract), 10 ether);
+        hoax(address(this));
+        quizContract.withdrawLeftoverEther();
     }
 
     receive() external payable {
