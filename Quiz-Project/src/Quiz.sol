@@ -2,7 +2,7 @@ pragma solidity 0.8.23;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Quiz is Ownable{
+contract Quiz is Ownable {
     /// @dev Maximum value that quiz answer can have
     uint256 public constant MAX_ANSWER_VALUE = 4;
     /// @dev CIDs to the questions on IPFS
@@ -18,17 +18,16 @@ contract Quiz is Ownable{
     //// @dev The score threshold that a user needs to reach to win the quiz
     uint16 public requiredScore;
     /// @dev End timestamp. Refer to the diagram shared in a Slack group
-    uint48 public endTs;
+    uint256 public endTs;
     /// @dev Timestamp until users can reveal their answers. Refer to the diagram shared in a Slack group
-    uint48 public revealPeriodTs;
+    uint256 public revealPeriodTs;
     /// @dev Value of entry fee needed for user to participate in the quiz
     uint256 public entryFee;
-
-    uint256 winnersCount;
+    /// @dev Timestamp after quiz for winners to withdraw their rewards
     uint256 quizEndTs;
+    /// @dev Number of quiz winners
+    uint256 winnersCount;
 
-    event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
-    event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
     /// @param _entryFee Entry fee for the quiz participants
     /// @param _requiredScore Required score to win
     /// @param _endTs End timestamp
@@ -39,8 +38,8 @@ contract Quiz is Ownable{
     constructor(
         uint256 _entryFee,
         uint16 _requiredScore,
-        uint48 _endTs,
-        uint48 _revealPeriodTs,
+        uint256 _endTs,
+        uint256 _revealPeriodTs,
         string[] memory _questions,
         bytes32[] memory _answerCommits
     ) payable Ownable(msg.sender) {
@@ -55,12 +54,21 @@ contract Quiz is Ownable{
         revealPeriodTs = _revealPeriodTs;
         questions = _questions;
         quizAnswerCommits = _answerCommits;
-        quizEndTs = revealPeriodTs + 7 days;
     }
-    // TODO Merisa: Dodaj da moze ceo niz odgovora da se posalje odjednom, da ne mora vise puta da se pozove
 
-    function answerQuestion(bytes32 question, bytes32 answerHash) external payable {
-        require(quizActive, "Quiz is not active");
+    event UserProvidedCommits(address user, bytes32[] commits);
+
+    /**
+     * 1. User creates a commit for each answer off-chain
+     *    - keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender))
+     *    - If its created on-chain, anyone can see the answers
+     */
+    /// @dev User provides the commits for their answers to the qiuz questions
+    ///      This method is `payable`
+    ///      Emits {UserProvidedCommits} event
+    /// @param answerCommits Hashes of the answers to the questions (commits)
+    function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
+        require(block.timestamp < endTs, "Quiz is not active");
         require(msg.value >= entryFee, "Incorrect entry fee");
         require(owner() != msg.sender, "Owner cannot participate");
         require(answerCommits.length == questions.length, "Invalid number of answers");
@@ -85,7 +93,7 @@ contract Quiz is Ownable{
         emit OwnerRevealedAnswers(msg.sender, answers);
     }
 
-    event UserRevealedAnswers(address user, uint8[] answers, isWinner);
+    event UserRevealedAnswers(address user, uint8[] answers, bool isWinner);
 
     /// @dev User reveals the answers to the quiz questions
     ///      Emits {UserRevealedAnswers} event
