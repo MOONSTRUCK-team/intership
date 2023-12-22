@@ -1,12 +1,14 @@
 pragma solidity 0.8.23;
+
 import "@openzeppelin/contracts/access/Ownable.sol";
-contract Quiz {
+
+contract Quiz is Ownable {
     /// @dev Maximum value that quiz answer can have
     uint256 public constant MAX_ANSWER_VALUE = 4;
     /// @dev CIDs to the questions on IPFS
     string[] public questions;
-   /// @dev Hashes of the answers to the questions (commits)
-    bytes32[] public quizAnswerCommits; 
+    /// @dev Hashes of the answers to the questions (commits)
+    bytes32[] public quizAnswerCommits;
     /// @dev Correct answers to the questions
     uint8[] public correctAnwers;
     /// @dev Mapping from user to commits of his answers
@@ -21,14 +23,14 @@ contract Quiz {
     uint48 public revealPeriodTs;
     /// @dev Value of entry fee needed for user to participate in the quiz
     uint256 public entryFee;
-    event QuestionAnswered(address player, bytes32 question, bytes32 answerHash);
-    event AnswerRevealed(address player, bytes32 question, bytes32 answer, bytes32 salt);
+
     /// @param _entryFee Entry fee for the quiz participants
     /// @param _requiredScore Required score to win
     /// @param _endTs End timestamp
     /// @param _revealPeriodTs Timestamp until users can reveal their answers
     /// @param _questions CIDs to the questions on IPFS
     /// @param _answerCommits Hashes of the answers to the questions (commits)
+
     constructor(
         uint256 _entryFee,
         uint16 _requiredScore,
@@ -50,48 +52,87 @@ contract Quiz {
         quizAnswerCommits = _answerCommits;
     }
 
+    event UserProvidedCommits(address user, bytes32[] commits);
 
-function answerQuestions(uint8[] calldata selectedAnswers, bytes32[] calldata userSalts) external payable {
-    require(block.timestamp < endTs, "Quiz is not active");
-    require(msg.value >= entryFee, "Incorrect entry fee");
-    require(owner() != msg.sender, "Owner cannot participate");
-    require(selectedAnswers.length == questions.length, "Invalid number of answers");
-    require(selectedAnswers.length == userSalts.length, "Invalid number of salts");
+    /**
+     * 1. User creates a commit for each answer off-chain
+     *    - keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender))
+     *    - If its created on-chain, anyone can see the answers
+     */
+    /// @dev User provides the commits for their answers to the qiuz questions
+    ///      This method is `payable`
+    ///      Emits {UserProvidedCommits} event
+    /// @param answerCommits Hashes of the answers to the questions (commits)
+    function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
+        require(block.timestamp < endTs, "Quiz is not active");
+        require(msg.value >= entryFee, "Incorrect entry fee");
+        require(owner() != msg.sender, "Owner cannot participate");
+        require(answerCommits.length == questions.length, "Invalid number of answers");
 
-    uint256 questionsLength = questions.length;
-    for (uint256 i = 0; i < questionsLength; i++) {
-        require(selectedAnswers[i] < MAX_ANSWER_VALUE, "Invalid answer index");
-        bytes32 userAnswerCommit = keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender));
-        userAnswerCommits[msg.sender].push(userAnswerCommit);
+        userAnswerCommits[msg.sender] = answerCommits;
 
-        emit QuestionAnswered(msg.sender, questions[i], userAnswerCommit);
+        emit UserProvidedCommits(msg.sender, answerCommits);
     }
-}
 
-function revealAnswer(uint8[] calldata selectedAnswers, bytes32[] calldata userSalts) external {
-    require(block.timestamp >= revealPeriodTs, "Reveal period has not started");
-    require(selectedAnswers.length == questions.length, "Invalid number of answers");
-    require(selectedAnswers.length == userSalts.length, "Invalid number of salts");
+    event OwnerRevealedAnswers(address owner, uint8[] answers);
 
-    uint256 questionsLength = questions.length;
-    for (uint256 i = 0; i < questionsLength; i++) {
-        bytes32 commitment = keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender));
-        require(userAnswerCommits[msg.sender][i] == commitment, "Invalid commitment");
-        bytes32 correctAnswerHash = keccak256(abi.encodePacked(correctAnwers[i],userSalts[i], msg.sender));
+    /// @dev Reveals the answers to the quiz questions
+    ///      Callable only by the onwer
+    ///      Emits {OwnerRevealedAnswers} event
+    /// @param answers Correct answers to the questions
+    /// @param userSalts Salts used for creating the commits
+    function revealQuizAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) external onlyOwner {
+        _checkIfValidReveal(quizAnswerCommits, answers, userSalts);
 
-        emit AnswerRevealed(msg.sender, questions[i], correctAnwers[i], userSalts[i]);
+        correctAnwers = answers;
 
-        if (commitment == correctAnswerHash) {
-            winners[msg.sender] = true;
-            countOfWinners++;
-            emit WinnerSet(msg.sender);
+        emit OwnerRevealedAnswers(msg.sender, answers);
+    }
+
+    event UserRevealedAnswers(address user, uint8[] answers, isWinner);
+
+    /// @dev User reveals the answers to the quiz questions
+    ///      Emits {UserRevealedAnswers} event
+    /// @param answers Answers to the questions
+    /// @param userSalts Salts used for creating the commits
+    function revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) external {
+        require(correctAnwers.length == questions.length, "Quiz answers are not revealed yet");
+        _checkIfValidReveal(userAnswerCommits[msg.sender], answers, userSalts);
+
+        uint256 score;
+        for (uint256 i; i < answers.length; i++) {
+            if (answers[i] == correctAnwers[i]) {
+                score++;
+            }
+        }
+
+        bool isWinner;
+        if (score >= requiredScore) {
+            isWinner = true;
+            winners[msg.sender] = isWinner;
+        }
+
+
+        emit UserRevealedAnswers(msg.sender, answers, isWinner);
+    }
+
+    function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata userSalts)
+        private
+    {
+        require(block.timestamp > endTs && block.timestamp < revealPeriodTs, "Invalid time for revaling answers");
+        require(answers.length == questions.length, "Invalid number of answers");
+        require(answers.length == userSalts.length, "Invalid number of salts");
+
+        uint256 questionsLength = questions.length;
+        for (uint256 i; i < questionsLength; i++) {
+            bytes32 commitment = keccak256(abi.encodePacked(answers[i], userSalts[i], msg.sender));
+            require(commits[i] == commitment, "Invalid commitment");
         }
     }
-}
-
 
     /// Reward Pool
     event RewardPayed(address receiver, uint256 prize);
+
     function isWinner(address _userAddress) public view returns (bool, uint16) {
         uint256 winnersLen = winners.length;
         for (uint16 i = 0; i < winnersLen; i++) {
@@ -101,10 +142,12 @@ function revealAnswer(uint8[] calldata selectedAnswers, bytes32[] calldata userS
         }
         return (false, 0);
     }
+
     function distributeRewards() internal view returns (uint256) {
         require(winners.length > 0, "This quiz has no winners");
         return (prizePool / winners.length);
     }
+
     function withdrawReward() external {
         (bool winnerStatus, uint16 index) = isWinner(msg.sender);
         require(winnerStatus, "You do not qualify for a reward");
@@ -113,5 +156,6 @@ function revealAnswer(uint8[] calldata selectedAnswers, bytes32[] calldata userS
         payable(msg.sender).transfer(reward);
         emit RewardPayed(msg.sender, reward);
     }
+
     function withdrawLeftoverEther() external {}
 }
