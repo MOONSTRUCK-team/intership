@@ -1,6 +1,6 @@
 pragma solidity 0.8.23;
-import "@openzeppelin/contracts/access/Ownable.sol";
 
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract Quiz is Ownable {
     /// @dev Maximum value that quiz answer can have
@@ -46,7 +46,7 @@ contract Quiz is Ownable {
     /// @param _answerCommits Hashes of the answers to the questions (commits)
     /// @param _rewardPool amount that will be distributed to quiz paticipants
 
-     constructor(
+    constructor(
         uint256 _entryFee,
         uint16 _requiredScore,
         uint256 _endTs,
@@ -54,14 +54,13 @@ contract Quiz is Ownable {
         string[] memory _questions,
         bytes32[] memory _answerCommits,
         uint256 _rewardPool
-
     ) payable Ownable(msg.sender) {
         require(_requiredScore <= _questions.length);
         require(_answerCommits.length == _questions.length);
         require(_endTs >= block.timestamp + 2 days && _endTs <= block.timestamp + 7 days);
         require(_revealPeriodTs >= _endTs + 2 days && _revealPeriodTs <= _endTs + 7 days);
         require(msg.value == (_rewardPool * 2), "Incorrect deposit amount for slashing");
-       
+
         entryFee = _entryFee;
         requiredScore = _requiredScore;
         endTs = _endTs;
@@ -101,49 +100,43 @@ contract Quiz is Ownable {
     // ///      Emits {OwnerRevealedAnswers} event
     // /// @param answers Correct answers to the questions
     // /// @param userSalts Salts used for creating the commits
-    /// @dev Function called by the owner to reveal answers 
-   function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) external onlyOwner {
+    /// @dev Function called by the owner to reveal answers
+    function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) external onlyOwner {
         require(block.timestamp > endTs, "Quiz is still active");
 
         _checkIfValidReveal(quizAnswerCommits, answers, userSalts);
 
         correctAnwers = answers;
 
-        if (block.timestamp <=  endTs + SLASHING_PERIOD) {
+        if (block.timestamp <= endTs + SLASHING_PERIOD) {
             payable(owner()).transfer(rewardPool);
-        }
-        else {
+        } else {
             isOwnerLate = true;
         }
 
         emit OwnerRevealedAnswers(msg.sender, answers);
     }
 
- /// @dev Allows quiz participants to withdraw their funds if the quiz owner
- ///    either revealed answers late or did not provide any answers.
- ///     Participants must have committed their answers to be eligible.
-
-    function finishWithQuiz()external payable{
-        require(isOwnerLate || (correctAnwers.length == 0 && block.timestamp > revealPeriodTs), "Quiz creator revealed answers on time");
+    /// @dev Allows quiz participants to withdraw their funds if the quiz owner
+    ///    either revealed answers late or did not provide any answers.
+    ///     Participants must have committed their answers to be eligible.
+    function finishWithQuiz() external payable {
+        require(
+            isOwnerLate || (correctAnwers.length == 0 && block.timestamp > revealPeriodTs),
+            "Quiz creator revealed answers on time"
+        );
         require(userAnswerCommits[msg.sender].length > 0, "You have not provided commits");
         require(!winners[msg.sender], "You already withdrawn reward");
         require(owner() != msg.sender, "Owner cannot participate");
 
-        
-        uint256 reward = entryFee + (rewardPool*2) /numberOfPlayers;
+        uint256 reward = entryFee + (rewardPool * 2) / numberOfPlayers;
         payable(msg.sender).transfer(reward);
-        
-        
+
         winners[msg.sender] = true;
         emit RewardPayed(msg.sender, reward);
     }
-    
 
-        
-    
     event UserRevealedAnswers(address user, uint8[] answers, bool isWinner);
-    
-    
 
     /// @dev User reveals the answers to the quiz questions
     ///      Emits {UserRevealedAnswers} event
@@ -166,23 +159,7 @@ contract Quiz is Ownable {
             winners[msg.sender] = isWinner;
         }
 
-
         emit UserRevealedAnswers(msg.sender, answers, isWinner);
-    }
-
-
-    function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata userSalts)
-        private
-    {
-        require(block.timestamp > endTs && block.timestamp < revealPeriodTs, "Invalid time for revaling answers");
-        require(answers.length == questions.length, "Invalid number of answers");
-        require(answers.length == userSalts.length, "Invalid number of salts");
-
-        uint256 questionsLength = questions.length;
-        for (uint256 i; i < questionsLength; i++) {
-            bytes32 commitment = keccak256(abi.encodePacked(answers[i], userSalts[i], msg.sender));
-            require(commits[i] == commitment, "Invalid commitment");
-        }
     }
 
     /// Reward Pool
@@ -199,7 +176,6 @@ contract Quiz is Ownable {
         require(!isOwnerLate || correctAnwers.length > 0, "You cannot withdraw reward");
         require(block.timestamp > quizEndTs, "Period to withdraw reward ended");
 
-        
         winners[msg.sender] = false;
 
         uint256 reward = distributeRewards();
@@ -220,4 +196,18 @@ contract Quiz is Ownable {
         emit LeftoverEthWithdrawed(msg.sender, leftoverBal);
     }
 
+        function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata userSalts)
+        private
+        view
+    {
+        require(block.timestamp > endTs && block.timestamp < revealPeriodTs, "Invalid time for revaling answers");
+        require(answers.length == questions.length, "Invalid number of answers");
+        require(answers.length == userSalts.length, "Invalid number of salts");
+
+        uint256 questionsLength = questions.length;
+        for (uint256 i; i < questionsLength; i++) {
+            bytes32 commitment = keccak256(abi.encodePacked(answers[i], userSalts[i], msg.sender));
+            require(commits[i] == commitment, "Invalid commitment");
+        }
+    }
 }
