@@ -120,7 +120,7 @@ contract Quiz is Ownable {
     ///      entry fee + part of the reward pool
     function finishWithQuiz() external {
         require(block.timestamp > revealPeriodTs && correctAnwers.length == 0, "Quiz creator revealed answers on time");
-        
+
         isOwnerLate = true;
         // If owner did not reveal answers on time, everyone providing the answer commits is a winner
         winnersCount = numberOfPlayers;
@@ -169,7 +169,7 @@ contract Quiz is Ownable {
     }
 
     function withdrawReward() external {
-         require(block.timestamp > quizEndTs, "Period to withdraw reward ended");
+        require(block.timestamp > quizEndTs, "Period to withdraw reward ended");
         // If owner revealed answers late and user did not provide any answers
         // he is not eligible for a reward, revert in that case
         if (isOwnerLate && userAnswerCommits[msg.sender].length == 0) {

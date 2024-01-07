@@ -5,22 +5,49 @@ import "../src/Quiz.sol";
 
 contract QuizTest is Test {
     Quiz public quizContract;
+    string[] public questions;
+    bytes32[] public answerCommits;
+    uint256 public aTs;
+    uint256 public rTs;
+    bool isOwnerLate;
+    uint8[] public correctAnswers;
 
     event Log(string func, uint256 gas);
 
     function setUp() public {
-        uint256 aTs = block.timestamp + 7 days;
-        uint256 rTs = aTs + 2 days;
-        string[] memory questions;
+        aTs = block.timestamp + 7 days;
+        rTs = aTs + 2 days;
         questions = new string[](2);
         questions[0] = "1";
         questions[1] = "2";
 
-        bytes32[] memory answerCommits = new bytes32[](2);
+        answerCommits = new bytes32[](2);
         answerCommits[0] = keccak256(abi.encodePacked("1"));
         answerCommits[1] = keccak256(abi.encodePacked("1"));
 
         quizContract = new Quiz(0, 0, aTs, rTs, questions, answerCommits);
+    }
+
+    function test_Revert_WhenOwner_Answers() public {
+        vm.expectRevert("Owner cannot participate");
+        quizContract.provideAnswerCommits(answerCommits);
+    }
+
+    function testRevert_OwnerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) public {
+        vm.warp(rTs + 7 days);
+        vm.expectRevert("Invalid time for revaling answers");
+        quizContract.ownerRevealsAnswers(answers, userSalts);
+    }
+
+    function test_FinishWithQuiz_Prematurely(uint8 x) public {
+        vm.assume(x > 0);
+        vm.warp(rTs + x);
+        quizContract.finishWithQuiz();
+    }
+
+    function test_Revert_revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) public {
+        vm.expectRevert("Quiz answers are not revealed yet");
+        quizContract.revealUserAnswer(answers, userSalts);
     }
 
     function test_RevertWhen_NotWinner() public {
