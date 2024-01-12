@@ -1,0 +1,6 @@
+[submodule "lib/forge-std"]
+	path = Quiz-Project/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "Quiz-Project/lib/openzeppelin-contracts"]
+	path = Quiz-Project/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
