@@ -1,15 +1,15 @@
-pragma solidity 0.8.22;
+pragma solidity 0.8.23;
 
 import "../src/Quiz.sol";
 import "forge-std/Test.sol";
 
 abstract contract QuizBaseTest is Test {
     uint256 public constant ENTRY_FEE = 1 ether;
-    uint256 public constant REQUIRED_SCORE = 5;
-    uint256 public immutable END_TIMESTAMP;
-    uint256 public immutable REVEAL_PERIOD_TIMESTAMP;
-    string[] public constant QUESTIONS = ["Question 1", "Question 2"];
-    bytes32[] public constant ANSWER_COMMITS = [keccak256("Answer 1"), keccak256("Answer 2")];
+    uint16 public constant REQUIRED_SCORE = 5;
+    uint256 public END_TIMESTAMP;
+    uint256 public REVEAL_PERIOD_TIMESTAMP;
+    string[] public QUESTIONS = ["Question 1", "Question 2"];
+    bytes32[] public ANSWER_COMMITS = [keccak256("Answer 1"), keccak256("Answer 2")];
 
     Quiz quiz;
 

@@ -1,4 +1,4 @@
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import "./QuizBaseTest.t.sol";
 
@@ -6,7 +6,9 @@ contract QuizTest is QuizBaseTest {
     // TODO Test cases where constructor should revert
     function test_constructor_revertsWhen_requiredScoreBiggerThanQuestionsLength() public {
         vm.expectRevert();
-        new Quiz(ENTRY_FEE, QUESTIONS.length + 1, END_TIMESTAMP, REVEAL_PERIOD_TIMESTAMP, QUESTIONS, ANSWER_COMMITS);
+        new Quiz(
+            ENTRY_FEE, uint16(QUESTIONS.length + 1), END_TIMESTAMP, REVEAL_PERIOD_TIMESTAMP, QUESTIONS, ANSWER_COMMITS
+        );
     }
 
     function test_constructor_setProperValues() public {
@@ -36,11 +38,15 @@ contract QuizTest is QuizBaseTest {
     }
 
     function testConstructorSetsQuestions() public {
-        assertEq(quiz.questions(), ["Question 1", "Question 2"]);
+        for (uint256 i = 0; i < QUESTIONS.length; i++) {
+            assertEq(quiz.questions(i), QUESTIONS[i]);
+        }
     }
 
     function testConstructorSetsAnswerCommits() public {
-        assertEq(quiz.quizAnswerCommits(), [keccak256("Answer 1"), keccak256("Answer 2")]);
+        for (uint256 i = 0; i < ANSWER_COMMITS.length; i++) {
+            assertEq(quiz.quizAnswerCommits(i), ANSWER_COMMITS[i]);
+        }
     }
 
     function testConstructorDepositsOwnerFunds() public {
