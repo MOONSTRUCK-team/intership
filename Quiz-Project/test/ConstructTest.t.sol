@@ -1,21 +1,18 @@
 pragma solidity ^0.8.23;
 
-import "forge-std/Test.sol";
-import "../src/Quiz.sol";
+import "./QuizBaseTest.t.sol";
 
-contract QuizTest is Test {
-    Quiz quiz;
+contract QuizTest is QuizBaseTest {
+    // TODO Test cases where constructor should revert
+    function test_constructor_revertsWhen_requiredScoreBiggerThanQuestionsLength() public {
+        vm.expectRevert();
+        new Quiz(ENTRY_FEE, QUESTIONS.length + 1, END_TIMESTAMP, REVEAL_PERIOD_TIMESTAMP, QUESTIONS, ANSWER_COMMITS);
+    }
 
-    function setUp() public {
-        // Replace with your actual planned values for deployment
-        quiz = new Quiz(
-            1 ether,  // Entry fee
-            5,        // Required score
-            block.timestamp + 5 days,  // End timestamp
-            block.timestamp + 7 days,  // Reveal period timestamp
-            ["Question 1", "Question 2"],  // Questions
-            [keccak256("Answer 1"), keccak256("Answer 2")]  // Answer commits
-        );
+    function test_constructor_setProperValues() public {
+        assertEq(quiz.owner(), msg.sender);
+        assertEq(quiz.entryFee(), ENTRY_FEE);
+        assertEq(quiz.requiredScore(), REQUIRED_SCORE);
     }
 
     function testConstructorSetsOwner() public {
@@ -23,15 +20,15 @@ contract QuizTest is Test {
     }
 
     function testConstructorSetsEntryFee() public {
-        assertEq(quiz.entryFee(), 100 wei);
+        assertEq(quiz.entryFee(), ENTRY_FEE);
     }
 
     function testConstructorSetsRequiredScore() public {
-        assertEq(quiz.requiredScore(), 5);
+        assertEq(quiz.requiredScore(), REQUIRED_SCORE);
     }
 
     function testConstructorSetsEndTimestamp() public {
-        assertEq(quiz.endTs(), block.timestamp + 5 days);
+        assertEq(quiz.endTs(), END_TIMESTAMP);
     }
 
     function testConstructorSetsRevealPeriodTimestamp() public {

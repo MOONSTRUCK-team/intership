@@ -66,6 +66,8 @@ contract Quiz is Ownable {
 
     event UserProvidedCommits(address user, bytes32[] commits);
 
+    error Quiz__QuizNotActive();
+
     /**
      * 1. User creates a commit for each answer off-chain
      *    - keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender))
@@ -76,6 +78,7 @@ contract Quiz is Ownable {
     ///      Emits {UserProvidedCommits} event
     /// @param answerCommits Hashes of the answers to the questions (commits)
     function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
+        if (block.timestamp >= endTs) revert Quiz__QuizNotActive();
         require(block.timestamp < endTs, "Quiz is not active");
         require(msg.value == entryFee, "Incorrect entry fee");
         require(owner() != msg.sender, "Owner cannot participate");
@@ -95,7 +98,6 @@ contract Quiz is Ownable {
     /// @param answers Correct answers to the questions
     /// @param userSalts Salts used for creating the commits
     function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) external onlyOwner {
-        require(block.timestamp > endTs, "Quiz is still active");
         _checkIfValidReveal(quizAnswerCommits, answers, userSalts);
 
         bool isOwnerLate_;
