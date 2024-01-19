@@ -24,9 +24,9 @@ contract Quiz is Ownable {
     uint256 public immutable entryFee;
     //// @dev The score threshold that a user needs to reach to win the quiz
     uint256 public immutable requiredScore;
-    /// @dev End timestamp. Refer to the diagram shared in a Slack group
+    /// @dev Timestamp until users can provide their answers
     uint256 public immutable answeringEndTs;
-    /// @dev Timestamp until users can reveal their answers. Refer to the diagram shared in a Slack group
+    /// @dev Timestamp until users can reveal their answers
     uint256 public immutable revealPeriodTs;
     /// @dev Timestamp after quiz for winners to withdraw their rewards
     uint256 public immutable quizEndTs;
@@ -42,7 +42,7 @@ contract Quiz is Ownable {
     /// @dev Correct answers to the questions
     uint8[] public correctAnwers;
     /// @dev flag if owner was late with revealing answers)
-    bool public isOwnerLate;
+    bool public lateAnswerReveal;
     /// @dev Number of quiz winners
     uint128 public winnersCount;
     /// @dev number of players who provided commit
@@ -110,17 +110,17 @@ contract Quiz is Ownable {
     /// @dev User provides the commits for their answers to the quiz questions
     ///      This method is `payable`
     ///      Emits {UserProvidedCommits} event
-    /// @param answerCommits Commits of the answers to the questions
-    function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
-        if (block.timestamp <= answeringEndTs) revert Quiz__QuizNotActive();
-        if (msg.value != entryFee) revert Quiz__InvalidEntryFee();
+    /// @param answerCommits_ Commits of the answers to the questions
+    function provideAnswerCommits(bytes32[] calldata answerCommits_) external payable {
         if (owner() == msg.sender) revert Quiz__OwnerCannotParticipate();
-        if (answerCommits.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
+        if (block.timestamp > answeringEndTs) revert Quiz__QuizNotActive();
+        if (msg.value != entryFee) revert Quiz__InvalidEntryFee();
+        if (answerCommits_.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
 
-        userAnswerCommits[msg.sender] = answerCommits;
+        userAnswerCommits[msg.sender] = answerCommits_;
         ++numberOfPlayers;
 
-        emit UserProvidedCommits(msg.sender, answerCommits);
+        emit UserProvidedCommits(msg.sender, answerCommits_);
     }
 
     /// @dev Reveals the answers to the quiz questions
@@ -138,7 +138,7 @@ contract Quiz is Ownable {
             payable(owner()).transfer(address(this).balance / 2);
         }
 
-        isOwnerLate = lateResponse;
+        lateAnswerReveal = lateResponse;
         correctAnwers = answers;
 
         emit QuizAnswersRevealed(msg.sender, answers, lateResponse);
@@ -152,7 +152,7 @@ contract Quiz is Ownable {
 
         // If owner did not reveal answers on time, everyone providing the answer commits is a winner and can withdraw the reward
         winnersCount = numberOfPlayers;
-        isOwnerLate = true;
+        lateAnswerReveal = true;
 
         emit QuizEndedPrematurely();
     }
@@ -187,7 +187,7 @@ contract Quiz is Ownable {
         if (block.timestamp < revealPeriodTs || block.timestamp > quizEndTs) revert Quiz__CannotWithdrwaRewardYet();
         // If owner revealed answers late and user did not provide any answers
         // he is not eligible for a reward, revert in that case
-        if (isOwnerLate) {
+        if (lateAnswerReveal) {
             if (userAnswerCommits[msg.sender].length == 0) revert Quiz__UserNotEligableForReward();
             // Else, check if user is a winner, as owner revealed answers on time.
             // Revert if not a winner
@@ -214,7 +214,7 @@ contract Quiz is Ownable {
         emit LeftoverEthWithdrawed(msg.sender, leftover);
     }
 
-    /// @dev Checks if the reveal is valid
+    /// @dev Checks if the reveal is validThe quizzes created
     /// @param commits Commits of the answers to the questions
     /// @param answers Answers to the questions
     /// @param salts Salts used for creating the commits
@@ -247,6 +247,13 @@ contract Quiz is Ownable {
         return quizAnswerCommits.length;
     }
 
+    /// @dev Returns the length of the `userAnswerCommits` array
+    /// @param user User address
+    /// @return Length of the `userAnswerCommits` array
+    function answerCommits(address user) external view returns (bytes32[] memory) {
+        return userAnswerCommits[user];
+    }
+
     /// @dev Returns the amount of reward that each winner gets
     /// @return Amount of reward that each winner gets
     function rewardAmount() internal view returns (uint256) {
@@ -256,7 +263,7 @@ contract Quiz is Ownable {
     /// @dev Returns the amount of reward pool
     /// @return amount Amount of reward pool
     function rewardPoolAmount() public view returns (uint256 amount) {
-        if (isOwnerLate) amount = address(this).balance;
+        if (lateAnswerReveal) amount = address(this).balance;
         else amount = address(this).balance / 2;
     }
 }

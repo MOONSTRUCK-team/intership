@@ -19,7 +19,70 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
     function test_provideAnswerCommits_revertsWhen_senderOwner() public {
         vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__OwnerCannotParticipate.selector));
 
+        vm.prank(OWNER);
         quiz.provideAnswerCommits(ANSWER_COMMITS);
+    }
+
+    function test_provideAnswerCommits_revertsWhen_answersProvidedBeforeAnsweringEndTs(address nonOwner) public {
+        vm.assume(nonOwner != OWNER);
+
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__QuizNotActive.selector));
+
+        vm.warp(ANSWERING_END_TS + 1 seconds);
+        quiz.provideAnswerCommits(ANSWER_COMMITS);
+    }
+
+    function test_provideAnswerCommits_revertsWhen_invalidEntryFee(address nonOwner) public {
+        vm.assume(nonOwner != OWNER);
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__InvalidEntryFee.selector));
+
+        uint256 validTs = ANSWERING_END_TS - 1 seconds;
+        uint256 invalidEntryFee = ENTRY_FEE - 1 wei;
+
+        vm.warp(validTs);
+        vm.deal(nonOwner, invalidEntryFee);
+        vm.prank(nonOwner);
+        quiz.provideAnswerCommits{value: invalidEntryFee}(ANSWER_COMMITS);
+    }
+
+    function test_provideAnswerCommits_revertsWhen_answerCommitsArrayLenNotEqWithQuestionsCidsLen(
+        address nonOwner,
+        bytes32 answerCommit
+    ) public {
+        vm.assume(nonOwner != OWNER);
+        bytes32[] memory answerCommits = new bytes32[](2);
+        answerCommits[0] = answerCommit;
+        
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__ArraysLengthMismatch.selector));
+
+        uint256 validTs = ANSWERING_END_TS - 1 seconds;
+
+        vm.warp(validTs);
+        vm.deal(nonOwner, ENTRY_FEE);
+        vm.prank(nonOwner);
+        quiz.provideAnswerCommits{value: ENTRY_FEE}(answerCommits);
+    }
+
+    function test_provideAnswerCommits_setAnswerCommits_increasesNumOfPlayers(address nonOwner, bytes32 answerCommit)
+        public
+    {
+        vm.assume(nonOwner != OWNER);
+
+        bytes32[] memory answerCommits = new bytes32[](1);
+        answerCommits[0] = answerCommit;
+        uint256 validTs = ANSWERING_END_TS - 1 seconds;
+
+        vm.warp(validTs);
+        vm.deal(nonOwner, ENTRY_FEE);
+        vm.prank(nonOwner);
+        quiz.provideAnswerCommits{value: ENTRY_FEE}(answerCommits);
+
+        assertEq(quiz.numberOfPlayers(), 1);
+
+        bytes32[] memory userAnswerCommits = quiz.answerCommits(nonOwner);
+        for (uint256 i; i < userAnswerCommits.length; ++i) {
+            assertEq(userAnswerCommits[i], answerCommits[i]);
+        }
     }
 
     //--------------------
@@ -57,27 +120,22 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         quiz.forceFinishQuiz();
     }
 
+    //--------------------
+    // `revealUserAnswer` tests
+    //---------------------
+
     function test_Revert_revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) public {
         vm.expectRevert("Quiz answers are not revealed yet");
         quiz.revealUserAnswer(answers, userSalts);
     }
 
+    //--------------------
+    // `withdrawReward` tests
+    //---------------------
+
     function test_RevertWhen_NotWinner() public {
         vm.expectRevert("You do not qualify for a reward");
         quiz.withdrawReward();
-    }
-
-    function testContractEthBalance() public view {
-        // @audit fix this
-        // console.log("ETH Balance", address(quiz).balance / 1e18);
-    }
-
-    function test_LeftoverEthWithdraw() public {
-        vm.expectRevert("Winners still have time to withdraw rewards");
-        vm.deal(address(quiz), 10 ether);
-
-        hoax(address(this));
-        quiz.withdrawLeftoverEther();
     }
 
     function test_RewardPayment() public {
@@ -89,4 +147,29 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         hoax(address(this));
         quiz.withdrawReward();
     }
+
+    function testContractEthBalance() public view {
+        // @audit fix this
+        // console.log("ETH Balance", address(quiz).balance / 1e18);
+    }
+
+    //--------------------
+    // `withdrawLeftoverEther` tests
+    //---------------------
+
+    function test_LeftoverEthWithdraw() public {
+        vm.expectRevert("Winners still have time to withdraw rewards");
+        vm.deal(address(quiz), 10 ether);
+
+        hoax(address(this));
+        quiz.withdrawLeftoverEther();
+    }
+
+    //--------------------
+    // `rewardAmount` tests
+    //---------------------
+
+    //--------------------
+    // `rewardPoolAmount` tests
+    //---------------------
 }

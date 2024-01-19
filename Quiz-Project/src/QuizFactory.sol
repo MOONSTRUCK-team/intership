@@ -13,13 +13,12 @@ contract QuizFactory {
     uint256 public count;
 
     /// @dev Mapping from quiz id to quiz contract address
-    mapping (uint256 id => address quiz) public quizzes;
+    mapping(uint256 id => address quiz) public quizzes;
 
     /// @dev Emitted when a new quiz is created
     /// @param id The id of the quiz
     /// @param quiz The address of the quiz
     event QuizCreated(uint256 id, address quiz);
-
 
     /// @dev Creates a new quiz
     ///      This function is payable
@@ -40,16 +39,18 @@ contract QuizFactory {
         string[] calldata questionsCids,
         bytes32[] calldata answerCommits
     ) external payable {
-        address quiz = address(new Quiz(
-            msg.sender,
-            entryFee,
-            requiredScore,
-            answeringEndTs,
-            revealPeriodEndTs,
-            quizEndTs,
-            questionsCids,
-            answerCommits
-        ));
+        address quiz = address(
+            new Quiz(
+                msg.sender,
+                entryFee,
+                requiredScore,
+                answeringEndTs,
+                revealPeriodEndTs,
+                quizEndTs,
+                questionsCids,
+                answerCommits
+            )
+        );
         uint256 id = ++count;
         quizzes[id] = quiz;
 

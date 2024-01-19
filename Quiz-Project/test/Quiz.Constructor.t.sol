@@ -11,7 +11,7 @@ contract QuizConstructorTest is QuizBaseTest {
         vm.expectRevert();
 
         new Quiz(
-            address(this),            
+            address(this),
             ENTRY_FEE,
             uint16(QUESTIONS_CIDS.length + 1),
             ANSWERING_END_TS,
@@ -23,7 +23,7 @@ contract QuizConstructorTest is QuizBaseTest {
     }
 
     function test_constructor_properValuesSet() public {
-        assertEq(quiz.owner(), address(this));
+        assertEq(quiz.owner(), OWNER);
         assertEq(address(quiz).balance, REWARD_POOL);
         assertEq(quiz.entryFee(), ENTRY_FEE);
         assertEq(quiz.requiredScore(), REQUIRED_SCORE);
