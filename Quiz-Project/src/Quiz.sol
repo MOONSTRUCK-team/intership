@@ -2,215 +2,257 @@ pragma solidity 0.8.23;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+/**
+ * @title Quiz contract
+ * @author Moonstruck interns
+ */
 contract Quiz is Ownable {
     /// @dev Maximum value that quiz answer can have
     uint256 public constant MAX_ANSWER_VALUE = 4;
-    /// @dev CIDs to the questions on IPFS
-    string[] public questions;
-    /// @dev Hashes of the answers to the questions (commits)
-    bytes32[] public quizAnswerCommits;
-    /// @dev Correct answers to the questions
-    uint8[] public correctAnwers;
+    /// @dev The amount of times the reward pool must be bigger than entry fee
+    uint256 public constant REWARD_POOL_MULTIPLIER = 10;
+    /// @dev Slashing period duration (1 day)
+    uint256 public constant SLASHING_PERIOD = 1 days;
+    /// @dev Minimum period duration
+    uint256 public constant MIN_PERIOD_DURATION = 2 days;
+    /// @dev Maximum period duration
+    uint256 public constant MAX_PERIOD_DURATION = 7 days;
+
+    /// @dev Value of entry fee needed for user to participate in the quiz
+    uint256 public immutable entryFee;
+    //// @dev The score threshold that a user needs to reach to win the quiz
+    uint256 public immutable requiredScore;
+    /// @dev End timestamp. Refer to the diagram shared in a Slack group
+    uint256 public immutable answeringEndTs;
+    /// @dev Timestamp until users can reveal their answers. Refer to the diagram shared in a Slack group
+    uint256 public immutable revealPeriodTs;
+    /// @dev Timestamp after quiz for winners to withdraw their rewards
+    uint256 public immutable quizEndTs;
+
     /// @dev Mapping from user to commits of his answers
     mapping(address user => bytes32[] answerCommits) public userAnswerCommits;
     /// @dev Mapping from user to the flag if he is a winner
     mapping(address user => bool isWinner) public winners;
-    //// @dev The score threshold that a user needs to reach to win the quiz
-    uint16 public requiredScore;
-    /// @dev End timestamp. Refer to the diagram shared in a Slack group
-    uint256 public endTs;
-    /// @dev Timestamp until users can reveal their answers. Refer to the diagram shared in a Slack group
-    uint256 public revealPeriodTs;
-    /// @dev Value of entry fee needed for user to participate in the quiz
-    uint256 public entryFee;
-    /// @dev Timestamp after quiz for winners to withdraw their rewards
-    uint256 quizEndTs;
-    /// @dev Number of quiz winners
-    uint256 winnersCount;
-    ///@dev Deposit made by the owner for the slashing mechanism
-    uint256 public ownerDeposit;
-    /// @dev Slashing period duration (1 day)
-    uint256 public constant SLASHING_PERIOD = 1 days;
-    /// @dev number of players who provided commit
-    uint256 public numberOfPlayers;
+    /// @dev CIDs to the questions on IPFS
+    string[] public questionsCids;
+    /// @dev Hashes of the answers to the questions (commits)
+    bytes32[] public quizAnswerCommits;
+    /// @dev Correct answers to the questions
+    uint8[] public correctAnwers;
     /// @dev flag if owner was late with revealing answers)
     bool public isOwnerLate;
-
-    /// @param _entryFee Entry fee for the quiz participants
-    /// @param _requiredScore Required score to win
-    /// @param _endTs End timestamp
-    /// @param _revealPeriodTs Timestamp until users can reveal their answers
-    /// @param _questions CIDs to the questions on IPFS
-    /// @param _answerCommits Hashes of the answers to the questions (commits)
-    constructor(
-        uint256 _entryFee,
-        uint16 _requiredScore,
-        uint256 _endTs,
-        uint256 _revealPeriodTs,
-        string[] memory _questions,
-        bytes32[] memory _answerCommits
-    ) payable Ownable(msg.sender) {
-        require(_requiredScore <= _questions.length);
-        require(_answerCommits.length == _questions.length);
-        require(_endTs >= block.timestamp + 2 days && _endTs <= block.timestamp + 7 days);
-        require(_revealPeriodTs >= _endTs + 2 days && _revealPeriodTs <= _endTs + 7 days);
-        require(msg.value >= _entryFee * 100, "Insufficient deposit");
-
-        entryFee = _entryFee;
-        requiredScore = _requiredScore;
-        endTs = _endTs;
-        revealPeriodTs = _revealPeriodTs;
-        questions = _questions;
-        quizAnswerCommits = _answerCommits;
-    }
+    /// @dev Number of quiz winners
+    uint128 public winnersCount;
+    /// @dev number of players who provided commit
+    uint128 public numberOfPlayers;
 
     event UserProvidedCommits(address user, bytes32[] commits);
+    event QuizAnswersRevealed(address owner, uint8[] answers, bool isLate);
+    event UserAnswersRevealed(address user, uint8[] answers, bool isWinner);
+    event QuizEndedPrematurely();
+    event RewardPayed(address receiver, uint256 prize);
+    event LeftoverEthWithdrawed(address receiver, uint256 etherReturned);
 
     error Quiz__QuizNotActive();
+    error Quiz__InvalidEntryFee();
+    error Quiz__OwnerCannotParticipate();
+    error Quiz__ArraysLengthMismatch();
+    error Quiz__InvalidCommit();
+    error Quiz__AnswersRevealedOnTime();
+    error Quiz__AnswersNotYetProvided();
+    error Quiz__CannotRevealTheAnswersYet();
+    error Quiz__CannotWithdrwaRewardYet();
+    error Quiz__UserNotEligableForReward();
+    error Quiz__QuizNotEnded();
 
-    /**
-     * 1. User creates a commit for each answer off-chain
-     *    - keccak256(abi.encodePacked(selectedAnswers[i], userSalts[i], msg.sender))
-     *    - If its created on-chain, anyone can see the answers
-     */
-    /// @dev User provides the commits for their answers to the qiuz questions
+    /// @param entryFee_ Entry fee for the quiz participants
+    /// @param requiredScore_ Required score to win
+    /// @param answeringEndTs_ Timestamp until users can provide their answers
+    /// @param revealPeriodTs_ Timestamp until users can reveal their answers
+    /// @param quizEndTs_ Timestamp which marks the end of the quiz. Users can claim their rewards until this timestamp
+    /// @param questionCids_ CIDs to the questions on IPFS
+    /// @param answerCommits_ Hashes of the answers to the questions (commits)
+    constructor(
+        uint256 entryFee_,
+        uint256 requiredScore_,
+        uint256 answeringEndTs_,
+        uint256 revealPeriodTs_,
+        uint256 quizEndTs_,
+        string[] memory questionCids_,
+        bytes32[] memory answerCommits_
+    ) payable Ownable(msg.sender) {
+        require(msg.value >= entryFee_ * REWARD_POOL_MULTIPLIER);
+        require(requiredScore_ <= questionCids_.length);
+        require(
+            answeringEndTs_ >= block.timestamp + MIN_PERIOD_DURATION
+                && answeringEndTs_ <= block.timestamp + MAX_PERIOD_DURATION
+        );
+        require(
+            revealPeriodTs_ >= answeringEndTs_ + MIN_PERIOD_DURATION
+                && revealPeriodTs_ <= answeringEndTs_ + MAX_PERIOD_DURATION
+        );
+        require(quizEndTs_ >= revealPeriodTs_ + MIN_PERIOD_DURATION);
+        require(questionCids_.length == answerCommits_.length);
+
+        entryFee = entryFee_;
+        requiredScore = requiredScore_;
+        answeringEndTs = answeringEndTs_;
+        revealPeriodTs = revealPeriodTs_;
+        questionsCids = questionCids_;
+        quizAnswerCommits = answerCommits_;
+        quizEndTs = quizEndTs_;
+    }
+
+    /// @dev User provides the commits for their answers to the quiz questions
     ///      This method is `payable`
     ///      Emits {UserProvidedCommits} event
-    /// @param answerCommits Hashes of the answers to the questions (commits)
+    /// @param answerCommits Commits of the answers to the questions
     function provideAnswerCommits(bytes32[] calldata answerCommits) external payable {
-        if (block.timestamp >= endTs) revert Quiz__QuizNotActive();
-        require(block.timestamp < endTs, "Quiz is not active");
-        require(msg.value == entryFee, "Incorrect entry fee");
-        require(owner() != msg.sender, "Owner cannot participate");
-        require(answerCommits.length == questions.length, "Invalid number of answers");
+        if (block.timestamp <= answeringEndTs) revert Quiz__QuizNotActive();
+        if (msg.value != entryFee) revert Quiz__InvalidEntryFee();
+        if (owner() == msg.sender) revert Quiz__OwnerCannotParticipate();
+        if (answerCommits.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
 
         userAnswerCommits[msg.sender] = answerCommits;
-        numberOfPlayers++;
+        ++numberOfPlayers;
 
         emit UserProvidedCommits(msg.sender, answerCommits);
     }
 
-    event OwnerRevealedAnswers(address owner, uint8[] answers, bool isLate);
-
     /// @dev Reveals the answers to the quiz questions
     ///      Callable only by the onwer
-    ///      Emits {OwnerRevealedAnswers} event
+    ///      Emits {QuizAnswersRevealed} event
     /// @param answers Correct answers to the questions
-    /// @param userSalts Salts used for creating the commits
-    function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata userSalts) external onlyOwner {
-        _checkIfValidReveal(quizAnswerCommits, answers, userSalts);
+    /// @param salts Salts used for creating the commits
+    function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata salts) external onlyOwner {
+        _checkIfValidReveal(quizAnswerCommits, answers, salts);
 
-        bool isOwnerLate_;
-        if (block.timestamp <= endTs + SLASHING_PERIOD) isOwnerLate_ = true;
-
-        // If owner provided the answers on time, he gets a refund of the deposit
-        // Equal to the reward pool
-        if (!isOwnerLate_) {
+        // If owner provided the answers on time, he gets a refund of half of the reward pool
+        // Otherwise, the reward pool is distributed to the winners as a whole
+        bool lateResponse = block.timestamp <= answeringEndTs + SLASHING_PERIOD;
+        if (!lateResponse) {
             payable(owner()).transfer(address(this).balance / 2);
         }
 
+        isOwnerLate = lateResponse;
         correctAnwers = answers;
-        isOwnerLate = isOwnerLate_;
 
-        emit OwnerRevealedAnswers(msg.sender, answers, isOwnerLate_);
+        emit QuizAnswersRevealed(msg.sender, answers, lateResponse);
     }
-
-    event QuizEndedPrematurely();
 
     /// @dev Marks the quiz as late in case the owner did not reveal the answers on time
     ///      This will allow anyone who provided the answer commits to withdraw their
     ///      entry fee + part of the reward pool
-    function finishWithQuiz() external {
-        require(block.timestamp > revealPeriodTs && correctAnwers.length == 0, "Quiz creator revealed answers on time");
+    function forceFinishQuiz() external {
+        if (block.timestamp <= revealPeriodTs || correctAnwers.length != 0) revert Quiz__AnswersRevealedOnTime();
 
-        isOwnerLate = true;
-        // If owner did not reveal answers on time, everyone providing the answer commits is a winner
+        // If owner did not reveal answers on time, everyone providing the answer commits is a winner and can withdraw the reward
         winnersCount = numberOfPlayers;
+        isOwnerLate = true;
 
         emit QuizEndedPrematurely();
     }
 
-    event UserRevealedAnswers(address user, uint8[] answers, bool isWinner);
-
     /// @dev User reveals the answers to the quiz questions
-    ///      Emits {UserRevealedAnswers} event
+    ///      Emits {UserAnswersRevealed} event
     /// @param answers Answers to the questions
-    /// @param userSalts Salts used for creating the commits
-    function revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) external {
-        require(correctAnwers.length == questions.length, "Quiz answers are not revealed yet");
-        _checkIfValidReveal(userAnswerCommits[msg.sender], answers, userSalts);
+    /// @param salts Salts used for creating the commits
+    function revealUserAnswer(uint8[] calldata answers, bytes32[] calldata salts) external {
+        if (correctAnwers.length != questionsCids.length) revert Quiz__AnswersNotYetProvided();
+        _checkIfValidReveal(userAnswerCommits[msg.sender], answers, salts);
 
         uint256 score;
-        for (uint256 i; i < answers.length; i++) {
+        for (uint256 i; i < answers.length; ++i) {
             if (answers[i] == correctAnwers[i]) {
-                score++;
+                ++score;
             }
         }
 
-        bool isWinner;
-        if (score >= requiredScore) {
-            isWinner = true;
+        bool isWinner = score >= requiredScore;
+        if (isWinner) {
+            ++winnersCount;
             winners[msg.sender] = isWinner;
         }
 
-        emit UserRevealedAnswers(msg.sender, answers, isWinner);
+        emit UserAnswersRevealed(msg.sender, answers, isWinner);
     }
 
-    /// Reward Pool
-
-    event RewardPayed(address receiver, uint256 prize);
-    event LeftoverEthWithdrawed(address receiver, uint256 etherReturned);
-
-    function distributeRewards() internal view returns (uint256) {
-        return rewardPool() / winnersCount;
-    }
-
-    function rewardPool() public view returns (uint256 rewardPool_) {
-        if (isOwnerLate) rewardPool_ = address(this).balance;
-        else rewardPool_ = address(this).balance / 2;
-    }
-
+    /// @dev User withdraws the reward if eligable
+    ///      Emits {RewardPayed} event
     function withdrawReward() external {
-        require(block.timestamp > quizEndTs, "Period to withdraw reward ended");
+        if (block.timestamp < revealPeriodTs || block.timestamp > quizEndTs) revert Quiz__CannotWithdrwaRewardYet();
         // If owner revealed answers late and user did not provide any answers
         // he is not eligible for a reward, revert in that case
-        if (isOwnerLate && userAnswerCommits[msg.sender].length == 0) {
-            require(block.timestamp > revealPeriodTs, "Period to withdraw reward ended");
+        if (isOwnerLate) {
+            if (userAnswerCommits[msg.sender].length == 0) revert Quiz__UserNotEligableForReward();
             // Else, check if user is a winner, as owner revealed answers on time.
             // Revert if not a winner
         } else {
-            require(winners[msg.sender], "You do not qualify for a reward");
+            if (!winners[msg.sender]) revert Quiz__UserNotEligableForReward();
         }
 
-        winners[msg.sender] = false;
         --winnersCount;
-        uint256 reward = distributeRewards();
+        winners[msg.sender] = false;
+        uint256 reward = rewardAmount();
         payable(msg.sender).transfer(reward);
 
         emit RewardPayed(msg.sender, reward);
     }
 
+    /// @dev Owner withdraws leftover ether
+    ///      Emits {LeftoverEthWithdrawed} event
     function withdrawLeftoverEther() external onlyOwner {
-        require(block.timestamp < quizEndTs, "Winners still have time to withdraw rewards");
+        if (block.timestamp < quizEndTs) revert Quiz__QuizNotEnded();
 
-        uint256 leftoverBal = address(this).balance;
-        payable(msg.sender).transfer(leftoverBal);
+        uint256 leftover = address(this).balance;
+        payable(msg.sender).transfer(leftover);
 
-        emit LeftoverEthWithdrawed(msg.sender, leftoverBal);
+        emit LeftoverEthWithdrawed(msg.sender, leftover);
     }
 
-    function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata userSalts)
+    /// @dev Checks if the reveal is valid
+    /// @param commits Commits of the answers to the questions
+    /// @param answers Answers to the questions
+    /// @param salts Salts used for creating the commits
+    function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata salts)
         private
         view
     {
-        require(block.timestamp > endTs && block.timestamp < revealPeriodTs, "Invalid time for revaling answers");
-        require(answers.length == questions.length, "Invalid number of answers");
-        require(answers.length == userSalts.length, "Invalid number of salts");
-
-        uint256 questionsLength = questions.length;
-        for (uint256 i; i < questionsLength; i++) {
-            bytes32 commitment = keccak256(abi.encodePacked(answers[i], userSalts[i], msg.sender));
-            require(commits[i] == commitment, "Invalid commitment");
+        if (block.timestamp < answeringEndTs || block.timestamp > revealPeriodTs) {
+            revert Quiz__CannotRevealTheAnswersYet();
         }
+        if (answers.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
+        if (answers.length != salts.length) revert Quiz__ArraysLengthMismatch();
+
+        uint256 questionsCidsLength_ = questionsCids.length;
+        for (uint256 i; i < questionsCidsLength_; ++i) {
+            bytes32 calculatedCommit = keccak256(abi.encodePacked(answers[i], salts[i], msg.sender));
+            if (commits[i] != calculatedCommit) revert Quiz__InvalidCommit();
+        }
+    }
+
+    /// @dev Returns the length of the `questionsCids` array
+    /// @return Length of the `questionsCids` array
+    function questionsCidsLength() external view returns (uint256) {
+        return questionsCids.length;
+    }
+
+    /// @dev Returns the length of the `quizAnswerCommits` array
+    /// @return Length of the `quizAnswerCommits` array
+    function quizAnswerCommitsLength() external view returns (uint256) {
+        return quizAnswerCommits.length;
+    }
+
+    /// @dev Returns the amount of reward that each winner gets
+    /// @return Amount of reward that each winner gets
+    function rewardAmount() internal view returns (uint256) {
+        return rewardPoolAmount() / winnersCount;
+    }
+
+    /// @dev Returns the amount of reward pool
+    /// @return amount Amount of reward pool
+    function rewardPoolAmount() public view returns (uint256 amount) {
+        if (isOwnerLate) amount = address(this).balance;
+        else amount = address(this).balance / 2;
     }
 }

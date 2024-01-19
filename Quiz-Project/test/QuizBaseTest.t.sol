@@ -5,24 +5,30 @@ import "forge-std/Test.sol";
 
 abstract contract QuizBaseTest is Test {
     uint256 public constant ENTRY_FEE = 1 ether;
-    uint16 public constant REQUIRED_SCORE = 5;
-    uint256 public END_TIMESTAMP;
-    uint256 public REVEAL_PERIOD_TIMESTAMP;
-    string[] public QUESTIONS = ["Question 1", "Question 2"];
+    uint256 public REQUIRED_SCORE;
+    uint256 public ANSWERING_END_TS;
+    uint256 public REVEAL_PERIOD_END_TS;
+    uint256 public QUIZ_END_TS;
+    string[] public QUESTIONS_CIDS = ["Question 1", "Question 2"];
     bytes32[] public ANSWER_COMMITS = [keccak256("Answer 1"), keccak256("Answer 2")];
+    uint256 public constant REWARD_POOL = 100 ether;
 
-    Quiz quiz;
+    Quiz public quiz;
 
     function setUp() public {
-        END_TIMESTAMP = block.timestamp + 5 days;
-        REVEAL_PERIOD_TIMESTAMP = block.timestamp + 7 days;
+        REQUIRED_SCORE = QUESTIONS_CIDS.length;
+        ANSWERING_END_TS = uint48(block.timestamp) + 5 days;
+        REVEAL_PERIOD_END_TS = ANSWERING_END_TS + 7 days;
+        QUIZ_END_TS = REVEAL_PERIOD_END_TS + 3 days;
 
-        quiz = new Quiz(
+        vm.deal(address(this), REWARD_POOL);
+        quiz = new Quiz{value: REWARD_POOL}(
             ENTRY_FEE, // Entry fee
             REQUIRED_SCORE, // Required score
-            END_TIMESTAMP, // End timestamp
-            REVEAL_PERIOD_TIMESTAMP, // Reveal period timestamp
-            QUESTIONS, // Questions
+            ANSWERING_END_TS, // Answering end timestamp
+            REVEAL_PERIOD_END_TS, // Reveal period timestamp
+            QUIZ_END_TS, // Quiz end timestamp
+            QUESTIONS_CIDS, // Questions
             ANSWER_COMMITS // Answer commits
         );
     }
