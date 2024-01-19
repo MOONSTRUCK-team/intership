@@ -11,6 +11,7 @@ contract QuizConstructorTest is QuizBaseTest {
         vm.expectRevert();
 
         new Quiz(
+            address(this),            
             ENTRY_FEE,
             uint16(QUESTIONS_CIDS.length + 1),
             ANSWERING_END_TS,

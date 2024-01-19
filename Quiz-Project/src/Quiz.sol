@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.23;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -5,6 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title Quiz contract
  * @author Moonstruck interns
+ * @dev Contract representing quiz
  */
 contract Quiz is Ownable {
     /// @dev Maximum value that quiz answer can have
@@ -65,6 +67,7 @@ contract Quiz is Ownable {
     error Quiz__UserNotEligableForReward();
     error Quiz__QuizNotEnded();
 
+    /// @param owner_ Owner of the quiz
     /// @param entryFee_ Entry fee for the quiz participants
     /// @param requiredScore_ Required score to win
     /// @param answeringEndTs_ Timestamp until users can provide their answers
@@ -73,6 +76,7 @@ contract Quiz is Ownable {
     /// @param questionCids_ CIDs to the questions on IPFS
     /// @param answerCommits_ Hashes of the answers to the questions (commits)
     constructor(
+        address owner_,
         uint256 entryFee_,
         uint256 requiredScore_,
         uint256 answeringEndTs_,
@@ -80,7 +84,7 @@ contract Quiz is Ownable {
         uint256 quizEndTs_,
         string[] memory questionCids_,
         bytes32[] memory answerCommits_
-    ) payable Ownable(msg.sender) {
+    ) payable Ownable(owner_) {
         require(msg.value >= entryFee_ * REWARD_POOL_MULTIPLIER);
         require(requiredScore_ <= questionCids_.length);
         require(

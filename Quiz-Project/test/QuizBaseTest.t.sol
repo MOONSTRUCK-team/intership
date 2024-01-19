@@ -23,6 +23,7 @@ abstract contract QuizBaseTest is Test {
 
         vm.deal(address(this), REWARD_POOL);
         quiz = new Quiz{value: REWARD_POOL}(
+            address(this),
             ENTRY_FEE, // Entry fee
             REQUIRED_SCORE, // Required score
             ANSWERING_END_TS, // Answering end timestamp
