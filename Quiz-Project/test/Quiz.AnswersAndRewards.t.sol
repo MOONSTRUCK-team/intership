@@ -8,7 +8,6 @@ import {stdStorage, StdStorage} from "forge-std/Test.sol";
  * TODO
  * - [ ] Update all the tests
  */
-
 contract QuizAnswersRewardsTest is QuizBaseTest {
     using stdStorage for StdStorage;
 
@@ -52,7 +51,7 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         vm.assume(nonOwner != OWNER);
         bytes32[] memory answerCommits = new bytes32[](2);
         answerCommits[0] = answerCommit;
-        
+
         vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__ArraysLengthMismatch.selector));
 
         uint256 validTs = ANSWERING_END_TS - 1 seconds;
@@ -94,8 +93,10 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         bytes32[] calldata userSalts
     ) public {
         vm.warp(REVEAL_PERIOD_END_TS + 7 days);
+        vm.prank(OWNER);
 
-        vm.expectRevert("Invalid time for revaling answers");
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__CannotRevealTheAnswersYet.selector));
+        
         quiz.ownerRevealsAnswers(answers, userSalts);
     }
 
@@ -103,10 +104,11 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         uint8[] calldata answers,
         bytes32[] calldata userSalts
     ) public {
-        vm.warp(REVEAL_PERIOD_END_TS + 1 days);
+        vm.prank(OWNER);
+        vm.warp(REVEAL_PERIOD_END_TS - 2 days);
         vm.assume(answers.length != userSalts.length);
-
-        vm.expectRevert("Invalid number of answers");
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__ArraysLengthMismatch.selector));
+       
         quiz.ownerRevealsAnswers(answers, userSalts);
     }
 
@@ -125,9 +127,11 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
     //---------------------
 
     function test_Revert_revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) public {
-        vm.expectRevert("Quiz answers are not revealed yet");
-        quiz.revealUserAnswer(answers, userSalts);
+        vm.assume(QUESTIONS_CIDS.length!=CORRECT_ANSWERS.length);
+        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__AnswersNotYetProvided.selector));
+        quiz.revealUserAnswer(answers,userSalts);
     }
+
 
     //--------------------
     // `withdrawReward` tests

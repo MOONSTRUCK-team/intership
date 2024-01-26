@@ -13,6 +13,8 @@ abstract contract QuizBaseTest is Test {
     string[] public QUESTIONS_CIDS = ["Question 1"];
     bytes32[] public ANSWER_COMMITS = [keccak256("Answer 1")];
     uint256 public constant REWARD_POOL = 100 ether;
+    uint8[] public CORRECT_ANSWERS;
+
 
     Quiz public quiz;
 
