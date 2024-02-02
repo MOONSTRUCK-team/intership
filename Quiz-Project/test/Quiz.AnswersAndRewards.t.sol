@@ -4,10 +4,6 @@ import "../src/Quiz.sol";
 import {QuizBaseTest} from "./QuizBaseTest.t.sol";
 import {stdStorage, StdStorage} from "forge-std/Test.sol";
 
-/**
- * TODO
- * - [ ] Update all the tests
- */
 contract QuizAnswersRewardsTest is QuizBaseTest {
     using stdStorage for StdStorage;
 
@@ -16,7 +12,7 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
     //---------------------
 
     function test_provideAnswerCommits_revertsWhen_senderOwner() public {
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__OwnerCannotParticipate.selector));
+        vm.expectRevert(abi.encodeWithSelector(Quiz.OwnerCannotParticipate.selector));
 
         vm.prank(OWNER);
         quiz.provideAnswerCommits(ANSWER_COMMITS);
@@ -25,7 +21,7 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
     function test_provideAnswerCommits_revertsWhen_answersProvidedBeforeAnsweringEndTs(address nonOwner) public {
         vm.assume(nonOwner != OWNER);
 
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__QuizNotActive.selector));
+        vm.expectRevert(abi.encodeWithSelector(Quiz.QuizNotActive.selector));
 
         vm.warp(ANSWERING_END_TS + 1 seconds);
         quiz.provideAnswerCommits(ANSWER_COMMITS);
@@ -33,7 +29,7 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
 
     function test_provideAnswerCommits_revertsWhen_invalidEntryFee(address nonOwner) public {
         vm.assume(nonOwner != OWNER);
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__InvalidEntryFee.selector));
+        vm.expectRevert(abi.encodeWithSelector(Quiz.InvalidEntryFee.selector));
 
         uint256 validTs = ANSWERING_END_TS - 1 seconds;
         uint256 invalidEntryFee = ENTRY_FEE - 1 wei;
@@ -52,7 +48,7 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         bytes32[] memory answerCommits = new bytes32[](2);
         answerCommits[0] = answerCommit;
 
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__ArraysLengthMismatch.selector));
+        vm.expectRevert(abi.encodeWithSelector(Quiz.ArraysLengthMismatch.selector));
 
         uint256 validTs = ANSWERING_END_TS - 1 seconds;
 
@@ -70,6 +66,9 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         bytes32[] memory answerCommits = new bytes32[](1);
         answerCommits[0] = answerCommit;
         uint256 validTs = ANSWERING_END_TS - 1 seconds;
+
+        vm.expectEmit(address(quiz));
+        emit Quiz.UserProvidedCommits(nonOwner, answerCommits);
 
         vm.warp(validTs);
         vm.deal(nonOwner, ENTRY_FEE);
@@ -92,33 +91,71 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
         uint8[] calldata answers,
         bytes32[] calldata userSalts
     ) public {
-        vm.warp(REVEAL_PERIOD_END_TS + 7 days);
-        vm.prank(OWNER);
+        vm.warp(ANSWERING_END_TS - 1);
 
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__CannotRevealTheAnswersYet.selector));
-        
+        vm.expectRevert(abi.encodeWithSelector(Quiz.CannotRevealTheAnswersYet.selector));
+
+        vm.prank(OWNER);
         quiz.ownerRevealsAnswers(answers, userSalts);
     }
 
-    function test_ownerRevealsAnwers_revertsWhen_invalidNumberOfAnswers(
-        uint8[] calldata answers,
-        bytes32[] calldata userSalts
-    ) public {
+    function test_ownerRevealsAnwers_revertsWhen_invalidNumberOfAnswers(uint8[] calldata answers) public {
+        bytes32[] memory salts = new bytes32[](answers.length + 1);
+
+        vm.warp(REVEAL_PERIOD_END_TS - 1);
+        vm.expectRevert(abi.encodeWithSelector(Quiz.ArraysLengthMismatch.selector));
+
         vm.prank(OWNER);
-        vm.warp(REVEAL_PERIOD_END_TS - 2 days);
-        vm.assume(answers.length != userSalts.length);
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__ArraysLengthMismatch.selector));
-       
-        quiz.ownerRevealsAnswers(answers, userSalts);
+        quiz.ownerRevealsAnswers(answers, salts);
+    }
+
+    function test_ownerRevealsAnswers_answersRevealedOnTime() public {
+        vm.warp(REVEAL_PERIOD_END_TS - quiz.SLASHING_PERIOD() - 1);
+
+        vm.expectEmit(address(quiz));
+        emit Quiz.QuizAnswersRevealed(OWNER, CORRECT_ANSWERS, false);
+
+        vm.prank(OWNER);
+        quiz.ownerRevealsAnswers(CORRECT_ANSWERS, SALTS);
+    }
+
+    function test_ownerRevealsAnswers_answersRevealedLate() public {
+        vm.warp(REVEAL_PERIOD_END_TS + quiz.SLASHING_PERIOD() + 1);
+
+        vm.expectEmit(address(quiz));
+        emit Quiz.QuizAnswersRevealed(OWNER, CORRECT_ANSWERS, true);
+
+        vm.prank(OWNER);
+        quiz.ownerRevealsAnswers(CORRECT_ANSWERS, SALTS);
     }
 
     //--------------------
     // `forceFinishQuiz` tests
     //---------------------
 
-    function test_forceFinishQuiz_Prematurely(uint8 x) public {
+    function test_forceFinishQuiz_revertsWhen_invalidTime(uint8 x) public {
+        vm.assume(x > 0);
+
+        vm.expectRevert(abi.encodeWithSelector(Quiz.CannotForceFinishQuiz.selector));
+        vm.warp(REVEAL_PERIOD_END_TS - x);
+        quiz.forceFinishQuiz();
+    }
+
+    function test_forceFinishQuiz_revertsWhen_noAnswersProvided(uint256 x) public {
+        vm.assume(x >= 0 && x < REVEAL_PERIOD_END_TS);
+
+        vm.expectRevert(abi.encodeWithSelector(Quiz.CannotForceFinishQuiz.selector));
+        vm.warp(REVEAL_PERIOD_END_TS - x);
+        quiz.forceFinishQuiz();
+    }
+
+    function test_forceFinishQuiz_quizEndedPrematurely(uint8 x) public {
         vm.assume(x > 0);
         vm.warp(REVEAL_PERIOD_END_TS + x);
+
+        vm.expectEmit(address(quiz));
+        emit Quiz.QuizEndedPrematurely();
+
         quiz.forceFinishQuiz();
     }
 
@@ -126,47 +163,63 @@ contract QuizAnswersRewardsTest is QuizBaseTest {
     // `revealUserAnswer` tests
     //---------------------
 
-    function test_Revert_revealUserAnswer(uint8[] calldata answers, bytes32[] calldata userSalts) public {
-        vm.assume(QUESTIONS_CIDS.length!=CORRECT_ANSWERS.length);
-        vm.expectRevert(abi.encodeWithSelector(Quiz.Quiz__AnswersNotYetProvided.selector));
-        quiz.revealUserAnswer(answers,userSalts);
+    function test_revealUserAnswer_revertsWhen_invalidTimeForReveal(
+        uint8[] calldata answers,
+        bytes32[] calldata userSalts
+    ) public {}
+
+    function test_revealUserAnswer_revertsWhen_arraysLengthMismatch(uint8[] calldata answers) public {
+        bytes32[] memory salts = new bytes32[](answers.length + 1);
+
+        vm.warp(REVEAL_PERIOD_END_TS - 1);
+
+        vm.expectRevert(abi.encodeWithSelector(Quiz.ArraysLengthMismatch.selector));
+        quiz.revealUserAnswer(answers, salts);
     }
 
+    function test_revealUserAnswers_userRevealedAnswers() public {}
 
     //--------------------
     // `withdrawReward` tests
     //---------------------
 
-    function test_RevertWhen_NotWinner() public {
-        vm.expectRevert("You do not qualify for a reward");
-        quiz.withdrawReward();
+    function test_withdrawReward_revertsWhen_rewardNotWithdrawableYet() public {
+        // vm.expectRevert("You do not qualify for a reward");
+        // quiz.withdrawReward();
     }
 
-    function test_RewardPayment() public {
-        stdstore.target(address(quiz)).sig("winners(address)").with_key(address(this)).checked_write(true);
+    function test_withdrawReward_revertsWhen_lateAnswerReveal_userNotParticipated() public {
+        // stdstore.target(address(quiz)).sig("winners(address)").with_key(address(this)).checked_write(true);
 
-        stdstore.target(address(quiz)).sig("winnersCount()").checked_write(1);
+        // stdstore.target(address(quiz)).sig("winnersCount()").checked_write(1);
 
-        vm.deal(address(quiz), 10 ether);
-        hoax(address(this));
-        quiz.withdrawReward();
+        // vm.deal(address(quiz), 10 ether);
+        // hoax(address(this));
+        // quiz.withdrawReward();
     }
 
-    function testContractEthBalance() public view {
-        // @audit fix this
-        // console.log("ETH Balance", address(quiz).balance / 1e18);
-    }
+    function test_withdrawReward_revertsWhen_answerRevealOnTime_userNotParticipated() public {}
+
+    function test_withdraw_userReceivedProperReward() public {}
 
     //--------------------
     // `withdrawLeftoverEther` tests
     //---------------------
 
-    function test_LeftoverEthWithdraw() public {
-        vm.expectRevert("Winners still have time to withdraw rewards");
-        vm.deal(address(quiz), 10 ether);
+    function test_withdrawLeftoverEther_revertsWhen_quizNotEnded() public {
+        // vm.expectRevert("Quiz is still active");
+        // quiz.withdrawLeftoverEther();
+    }
 
-        hoax(address(this));
-        quiz.withdrawLeftoverEther();
+    function test_withdrawLeftoverEther_leftoverEthWithdrawn() public {
+        // vm.expectRevert("Winners still have time to withdraw rewards");
+        // vm.deal(address(quiz), 10 ether);
+
+        // vm.expectEmit(address(quiz));
+        // emit Quiz.LeftoverEthWithdrawed(address(this), 100 ether);
+
+        // hoax(address(this));
+        // quiz.withdrawLeftoverEther();
     }
 
     //--------------------

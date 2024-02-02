@@ -11,10 +11,10 @@ abstract contract QuizBaseTest is Test {
     uint256 public REVEAL_PERIOD_END_TS;
     uint256 public QUIZ_END_TS;
     string[] public QUESTIONS_CIDS = ["Question 1"];
-    bytes32[] public ANSWER_COMMITS = [keccak256("Answer 1")];
+    uint8[] public CORRECT_ANSWERS = [1];
+    bytes32[] public SALTS = [bytes32(hex"01")];
+    bytes32[] public ANSWER_COMMITS = [keccak256(abi.encodePacked(CORRECT_ANSWERS[0], SALTS[0], OWNER))];
     uint256 public constant REWARD_POOL = 100 ether;
-    uint8[] public CORRECT_ANSWERS;
-
 
     Quiz public quiz;
 

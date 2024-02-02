@@ -55,17 +55,18 @@ contract Quiz is Ownable {
     event RewardPayed(address receiver, uint256 prize);
     event LeftoverEthWithdrawed(address receiver, uint256 etherReturned);
 
-    error Quiz__QuizNotActive();
-    error Quiz__InvalidEntryFee();
-    error Quiz__OwnerCannotParticipate();
-    error Quiz__ArraysLengthMismatch();
-    error Quiz__InvalidCommit();
-    error Quiz__AnswersRevealedOnTime();
-    error Quiz__AnswersNotYetProvided();
-    error Quiz__CannotRevealTheAnswersYet();
-    error Quiz__CannotWithdrwaRewardYet();
-    error Quiz__UserNotEligableForReward();
-    error Quiz__QuizNotEnded();
+    error QuizNotActive();
+    error InvalidEntryFee();
+    error OwnerCannotParticipate();
+    error ArraysLengthMismatch();
+    error InvalidCommit();
+    error CannotForceFinishQuiz();
+    error AnswersNotYetProvided();
+    error CannotRevealTheAnswersYet();
+    error CannotWithdrawRewardYet();
+    error UserNotEligableForReward();
+    error QuizNotEnded();
+    error RevealNotOnTime();
 
     /// @param owner_ Owner of the quiz
     /// @param entryFee_ Entry fee for the quiz participants
@@ -112,10 +113,10 @@ contract Quiz is Ownable {
     ///      Emits {UserProvidedCommits} event
     /// @param answerCommits_ Commits of the answers to the questions
     function provideAnswerCommits(bytes32[] calldata answerCommits_) external payable {
-        if (owner() == msg.sender) revert Quiz__OwnerCannotParticipate();
-        if (block.timestamp > answeringEndTs) revert Quiz__QuizNotActive();
-        if (msg.value != entryFee) revert Quiz__InvalidEntryFee();
-        if (answerCommits_.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
+        if (owner() == msg.sender) revert OwnerCannotParticipate();
+        if (block.timestamp > answeringEndTs) revert QuizNotActive();
+        if (msg.value != entryFee) revert InvalidEntryFee();
+        if (answerCommits_.length != questionsCids.length) revert ArraysLengthMismatch();
 
         userAnswerCommits[msg.sender] = answerCommits_;
         ++numberOfPlayers;
@@ -129,11 +130,11 @@ contract Quiz is Ownable {
     /// @param answers Correct answers to the questions
     /// @param salts Salts used for creating the commits
     function ownerRevealsAnswers(uint8[] calldata answers, bytes32[] calldata salts) external onlyOwner {
-        _checkIfValidReveal(quizAnswerCommits, answers, salts);
+        _checkIfValidReveal(true, quizAnswerCommits, answers, salts);
 
         // If owner provided the answers on time, he gets a refund of half of the reward pool
         // Otherwise, the reward pool is distributed to the winners as a whole
-        bool lateResponse = block.timestamp <= answeringEndTs + SLASHING_PERIOD;
+        bool lateResponse = block.timestamp > revealPeriodTs - SLASHING_PERIOD;
         if (!lateResponse) {
             payable(owner()).transfer(address(this).balance / 2);
         }
@@ -148,7 +149,7 @@ contract Quiz is Ownable {
     ///      This will allow anyone who provided the answer commits to withdraw their
     ///      entry fee + part of the reward pool
     function forceFinishQuiz() external {
-        if (block.timestamp <= revealPeriodTs || correctAnwers.length != 0) revert Quiz__AnswersRevealedOnTime();
+        if (block.timestamp <= revealPeriodTs || correctAnwers.length != 0) revert CannotForceFinishQuiz();
 
         // If owner did not reveal answers on time, everyone providing the answer commits is a winner and can withdraw the reward
         winnersCount = numberOfPlayers;
@@ -162,8 +163,7 @@ contract Quiz is Ownable {
     /// @param answers Answers to the questions
     /// @param salts Salts used for creating the commits
     function revealUserAnswer(uint8[] calldata answers, bytes32[] calldata salts) external {
-        if (correctAnwers.length != questionsCids.length) revert Quiz__AnswersNotYetProvided();
-        _checkIfValidReveal(userAnswerCommits[msg.sender], answers, salts);
+        _checkIfValidReveal(false, userAnswerCommits[msg.sender], answers, salts);
 
         uint256 score;
         for (uint256 i; i < answers.length; ++i) {
@@ -184,15 +184,15 @@ contract Quiz is Ownable {
     /// @dev User withdraws the reward if eligable
     ///      Emits {RewardPayed} event
     function withdrawReward() external {
-        if (block.timestamp < revealPeriodTs || block.timestamp > quizEndTs) revert Quiz__CannotWithdrwaRewardYet();
+        if (block.timestamp < revealPeriodTs || block.timestamp > quizEndTs) revert CannotWithdrawRewardYet();
         // If owner revealed answers late and user did not provide any answers
         // he is not eligible for a reward, revert in that case
         if (lateAnswerReveal) {
-            if (userAnswerCommits[msg.sender].length == 0) revert Quiz__UserNotEligableForReward();
+            if (userAnswerCommits[msg.sender].length == 0) revert UserNotEligableForReward();
             // Else, check if user is a winner, as owner revealed answers on time.
             // Revert if not a winner
         } else {
-            if (!winners[msg.sender]) revert Quiz__UserNotEligableForReward();
+            if (!winners[msg.sender]) revert UserNotEligableForReward();
         }
 
         --winnersCount;
@@ -206,33 +206,12 @@ contract Quiz is Ownable {
     /// @dev Owner withdraws leftover ether
     ///      Emits {LeftoverEthWithdrawed} event
     function withdrawLeftoverEther() external onlyOwner {
-        if (block.timestamp < quizEndTs) revert Quiz__QuizNotEnded();
+        if (block.timestamp < quizEndTs) revert QuizNotEnded();
 
         uint256 leftover = address(this).balance;
         payable(msg.sender).transfer(leftover);
 
         emit LeftoverEthWithdrawed(msg.sender, leftover);
-    }
-
-    /// @dev Checks if the reveal is validThe quizzes created
-    /// @param commits Commits of the answers to the questions
-    /// @param answers Answers to the questions
-    /// @param salts Salts used for creating the commits
-    function _checkIfValidReveal(bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata salts)
-        private
-        view
-    {
-        if (block.timestamp < answeringEndTs || block.timestamp > revealPeriodTs) {
-            revert Quiz__CannotRevealTheAnswersYet();
-        }
-        if (answers.length != questionsCids.length) revert Quiz__ArraysLengthMismatch();
-        if (answers.length != salts.length) revert Quiz__ArraysLengthMismatch();
-
-        uint256 questionsCidsLength_ = questionsCids.length;
-        for (uint256 i; i < questionsCidsLength_; ++i) {
-            bytes32 calculatedCommit = keccak256(abi.encodePacked(answers[i], salts[i], msg.sender));
-            if (commits[i] != calculatedCommit) revert Quiz__InvalidCommit();
-        }
     }
 
     /// @dev Returns the length of the `questionsCids` array
@@ -265,5 +244,33 @@ contract Quiz is Ownable {
     function rewardPoolAmount() public view returns (uint256 amount) {
         if (lateAnswerReveal) amount = address(this).balance;
         else amount = address(this).balance / 2;
+    }
+
+    /// @dev Checks if the reveal is validThe quizzes created
+    /// @param isOwner Flag if the caller is the owner
+    /// @param commits Commits of the answers to the questions
+    /// @param answers Answers to the questions
+    /// @param salts Salts used for creating the commits
+    function _checkIfValidReveal(bool isOwner,bytes32[] memory commits, uint8[] calldata answers, bytes32[] calldata salts)
+        private
+        view
+    {
+        if (block.timestamp < answeringEndTs) {
+            revert CannotRevealTheAnswersYet();
+        }
+
+        // Owner is allowed to answer later but he will be slashed
+        if (block.timestamp > revealPeriodTs && !isOwner) {
+            revert RevealNotOnTime();
+        }
+
+        if (answers.length != questionsCids.length) revert ArraysLengthMismatch();
+        if (answers.length != salts.length) revert ArraysLengthMismatch();
+
+        uint256 questionsCidsLength_ = questionsCids.length;
+        for (uint256 i; i < questionsCidsLength_; ++i) {
+            bytes32 calculatedCommit = keccak256(abi.encodePacked(answers[i], salts[i], msg.sender));
+            if (commits[i] != calculatedCommit) revert InvalidCommit();
+        }
     }
 }
